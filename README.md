@@ -1,4 +1,4 @@
-![image](https://github.com/patternizer/iris-xarray-cartopy/blob/master/london-ukcp18.png)
+![image](https://github.com/patternizer/iris-xarray-cartopy/blob/master/ukcp18.png)
 
 # iris-xarray-cartopy
 
