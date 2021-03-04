@@ -33,6 +33,6 @@ The code is distributed under terms and conditions of the [Open Government Licen
 
 ## Contact information
 
-* [Satyaban Bishoyi Ratna](s.bishoyi-ratna@uea.ac.uk)
-* [Michael Taylor](michael.a.taylor@uea.ac.uk)
+* [Satyaban Bishoyi Ratna](https://github.com/satyabanbratna)
+* [Michael Taylor](https://github.com/patternizer)
 
