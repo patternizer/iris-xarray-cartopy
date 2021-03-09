@@ -25,8 +25,8 @@ import cartopy.crs as ccrs
 import cartopy.feature as cf
 #from cartopy.io import shapereader
 #from cartopy.util import add_cyclic_point
-#from cartopy.mpl.ticker import LongitudeFormatter, LatitudeFormatter
-#from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
+from cartopy.mpl.ticker import LongitudeFormatter, LatitudeFormatter
+from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
 
 # Silence library version change notifications
 import warnings
@@ -43,19 +43,24 @@ datacube2 = 'DATA/tas_rcp85_land-cpm_uk_2.2km.nc'
 datacube3 = 'DATA/tas_rcp85_land-rcm_uk_12km.nc'
 
 # Plot settings:
-cmap = 'brewer_YlOrRd_09'
+cmap = 'YlOrRd'
 fontsize = 12
 levels = np.arange(-4, 14, 0.5)
 x0 = -0.60; x1 = 0.70; # London region extent (longitude)
 y0 = 51.10; y1 = 51.85 # London region extent (latitude)
 
 # Runtime flags (True / False):
+plot_coords = True
 plot_uk_xarray = True
 plot_london_cartopy = True
 
 # ---------------------------------------------------------------------------------------------------------
 # METHODS
 # ---------------------------------------------------------------------------------------------------------
+
+def coordXform(original_crs, target_crs, x, y):
+
+    return target_crs.transform_points( original_crs, x, y )
 
 def rotated_grid_transform(grid_in, option, SP_coor):
 
@@ -121,13 +126,58 @@ rcm = xr.open_dataset(datacube3, decode_cf=True)
 #np.shape(cpm.tas)  --> (10, 1, 606, 484)
 #np.shape(rcm.tas)  --> (10, 1, 112, 82)
 
-data1 = hadk.tas[0,:,:]
-data2 = cpm.tas[0,0,:,:]
-data3 = rcm.tas[0,0,:,:]
+data1 = hadk.tas[0,:,:]     # NB: (longitude,latitude) in TransverseMercator coords
+data2 = cpm.tas[0,0,:,:]    # NB: (longitude,latitude) in RotatedPole coords
+data3 = rcm.tas[0,0,:,:]    # NB: (grid_longitude,grid_latitude) in TransverseMercator coords
 
-print('convert from rotated pole to Cartesian ...')
+print('convert from datacube coords to rotated pole to Cartesian ...')
+
+crs_TransverseMercator = ccrs.TransverseMercator()
+crs_RotatedPole = ccrs.RotatedPole()
+crs_PlateCarree = ccrs.PlateCarree() 
+
+lon = np.array(data1.longitude); lat = np.array(data1.latitude)
+transformed = coordXform(crs_TransverseMercator, crs_PlateCarree, lon, lat)
+data1_lon = transformed[:,:,0]; data1_lat = transformed[:,:,1]
+
+lon = np.array(data2.longitude); lat = np.array(data2.latitude)
+transformed = coordXform(crs_RotatedPole, crs_PlateCarree, lon, lat)
+data2_lon = transformed[:,:,0]; data2_lat = transformed[:,:,1]
+
+lon = np.array(data3.grid_longitude); lat = np.array(data3.grid_latitude)
+transformed = coordXform(crs_TransverseMercator, crs_PlateCarree, lon, lat)
+data3_lon = transformed[:,:,0]; data3_lat = transformed[:,:,1]
 
 # rotated_grid_transform((0,0), 1, (0,0))
+
+if plot_coords == True:
+
+    print('plotting raw coordinates ...')
+
+    figstr = 'coordinates_raw.png'
+
+    plt.figure(figsize=(15,10))
+    plt.subplot(2, 3, 1); plt.plot(data1.longitude); plt.title('HadK: longitude (transverse_mercator)')
+    plt.subplot(2, 3, 4); plt.plot(data1.latitude); plt.title('HadK: latitude (transverse_mercator)')
+    plt.subplot(2, 3, 2); plt.plot(data2.longitude); plt.title('CPM: longitude (rotated_latitude_longitude)')
+    plt.subplot(2, 3, 5); plt.plot(data2.latitude); plt.title('CPM: latitude (rotated_latitude_longitude)')
+    plt.subplot(2, 3, 3); plt.plot(data3.grid_longitude); plt.title('RCM: longitude (transverse_mercator)')
+    plt.subplot(2, 3, 6); plt.plot(data3.grid_latitude); plt.title('RCM: latitude (transverse_mercator)')
+    plt.savefig(figstr)
+
+    print('plotting new coordinates ...')
+
+    figstr = 'coordinates_new.png'
+
+    plt.figure(figsize=(15,10))
+    plt.subplot(2, 3, 1); plt.plot(data1_lon); plt.title('HadK: longitude (PlateCarree)')
+    plt.subplot(2, 3, 4); plt.plot(data1_lat); plt.title('HadK: latitude (PlateCarree)')
+    plt.subplot(2, 3, 2); plt.plot(data2_lon); plt.title('CPM: longitude  (PlateCarree)')
+    plt.subplot(2, 3, 5); plt.plot(data2_lat); plt.title('CPM: latitude  (PlateCarree)')
+    plt.subplot(2, 3, 3); plt.plot(data3_lon); plt.title('RCM: longitude  (PlateCarree)')
+    plt.subplot(2, 3, 6); plt.plot(data3_lat); plt.title('RCM: latitude  (PlateCarree)')
+    plt.savefig(figstr)
+
 
 print('regridding datacubes in Xarray ...')
 
@@ -140,8 +190,8 @@ new_lat = np.linspace(cpm.grid_latitude[0], cpm.grid_latitude[-1], int(len(cpm.g
 
 # Regrid using CPM grid:
  
-hadkcpm = hadk.interp(projection_y_coordinate=new_lat, projection_x_coordinate=new_lon)
-rcmcpm = rcm.interp(projection_y_coordinate=new_lat, projection_x_coordinate=new_lon)
+hadkcpm = data1.interp(projection_y_coordinate=data2_lat, projection_x_coordinate=data2_lon)
+rcmcpm = rcm.tas.interp(projection_y_coordinate=data2_lat, projection_x_coordinate=data2_lon)
 
 data1 = hadkcpm
 data2 = cpm
@@ -157,25 +207,6 @@ axes[1].set_title("Interpolated data")
 # PLOTS
 # ---------------------------------------------------------------------------------------------------------
 
-if plot_uk_iplt == True:
-
-    print('generating Iris contour plot ...')
-
-    figstr = 'ukcp18-iplt.png'
-
-    plt.figure(figsize=(10,10))
-    plt.subplot(1, 3, 1)
-    fig1 = iplt.contourf(data1, levels, cmap=cmap); plt.title('HadUK', fontsize=fontsize)
-    ax1 = plt.gca(); ax1.coastlines(resolution='50m')
-    plt.subplot(1, 3, 2)
-    fig2 = iplt.contourf(data2, levels, cmap=cmap); plt.title('CPM', fontsize=fontsize)
-    ax2 = plt.gca(); ax2.coastlines(resolution='50m')
-    plt.subplot(1, 3, 3)
-    fig3 = iplt.contourf(data3, levels, cmap=cmap); plt.title('RCM', fontsize=fontsize)
-    ax3 = plt.gca(); ax3.coastlines(resolution='50m')
-    plt.colorbar(orientation='horizontal')
-    plt.savefig(figstr)
-
 if plot_uk_xarray == True:
 
     print('generating Matplotlib Xarray contour plot ...')
@@ -190,13 +221,13 @@ if plot_uk_xarray == True:
     for ax in grid:
         ax.set_axis_off()
         if j == 0:
-            fig1 = ax.contourf(xr.DataArray.from_iris(data1).values[:,:], levels, cmap=cmap)
+            fig1 = ax.contourf(data1, levels, cmap=cmap)
             ax.set_title('HadUK', fontsize=fontsize)
         elif j == 1:
-            fig2 = ax.contourf(xr.DataArray.from_iris(data2).values[:,:], levels, cmap=cmap)
+            fig2 = ax.contourf(data2, levels, cmap=cmap)
             ax.set_title('CPM', fontsize=fontsize)
         elif j == 2:
-            fig3 = ax.contourf(xr.DataArray.from_iris(data3).values[:,:], levels, cmap=cmap)
+            fig3 = ax.contourf(data3, levels, cmap=cmap)
             ax.set_title('RCM', fontsize=fontsize)
         j += 1
     cbar = ax.cax.colorbar(fig3)
